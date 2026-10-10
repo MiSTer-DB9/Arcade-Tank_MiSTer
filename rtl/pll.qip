@@ -1,0 +1,7 @@
+#============================================================================
+# Tank - PLL QIP File (loaded by sys/pll_q17.qip)
+#============================================================================
+# The MiSTer framework expects the core's PLL to be at rtl/pll.qip.
+# Our PLL uses direct ALTPLL instantiation — no encrypted MegaWizard IP needed.
+
+set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) pll.v]

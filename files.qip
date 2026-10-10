@@ -1,0 +1,43 @@
+#============================================================================
+# Tank - MiSTer FPGA Core File List
+#============================================================================
+# Add ALL source files for this project here.
+# Do NOT add files through Quartus IDE - it will mess up this file.
+# The PLL is loaded via sys/pll_q17.qip -> rtl/pll.qip (MiSTer convention);
+# do not list rtl/pll.v here.
+
+# The two boards (top of the game logic)
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/tank_core.sv
+
+# Controls, motion, shells, collisions and scoring
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/game/tank_controls_hw.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/game/tank_motion.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/game/shell_motion.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/game/tank_shells.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/game/tank_collision_hw.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/game/ttl_9316.sv
+
+# Video: sync, maze, mines, objects; MiSTer output (CRT Adjust, framebuffer)
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/video_sync.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/playfield.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/minefield.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/tank_video.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/tank_object.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/shell_object.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/blast_object.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/crt_adjust.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/rotate_ddr_fifo.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/tank_rotate.sv
+
+# Sound: engines, shot and explosion
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sound/tank_sound.sv
+
+# Memory: the 2 KB ROM, loaded from the MRA
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/dpram_2k8.sv
+
+# Top level and build ID
+set_global_assignment -name SYSTEMVERILOG_FILE Arcade-Tank.sv
+set_global_assignment -name SYSTEMVERILOG_FILE build_id.v
+
+# Timing constraints
+set_global_assignment -name SDC_FILE Tank.sdc

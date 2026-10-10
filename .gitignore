@@ -1,0 +1,31 @@
+# Quartus build output
+db/
+incremental_db/
+output_files/
+simulation/
+greybox_tmp/
+hc_output/
+hps_isw_handoff/
+.qsys_edit/
+PLLJ_PLLSPE_INFO.txt
+build_id.v
+c5_pin_model_dump.txt
+Tank.sources*.json
+*.cdf
+*.qws
+*.ppf
+*.ddb
+*.rpt
+*.smsg
+*.summary
+*.done
+*.jdi
+*.pin
+*.sof
+*.sld
+*.bak
+*~
+
+# ROM data never belongs here; the MRA files name the ROMs by CRC.
+*.zip
+*.rom

@@ -1,0 +1,7 @@
+# Store text files with LF line endings
+* text=auto
+*.bat text eol=crlf
+
+# Bitstreams are binary and never line-ending normalised
+*.rbf binary
+*.sof binary
