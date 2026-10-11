@@ -144,29 +144,46 @@ module tank_rotate #(
 
     //------------------------------------------------------------------
     // Triple buffering (as sys screen_rotate, except that the input buffer
-    // advances once per woven frame: at the VS of each fl=0 field)
+    // advances once per woven frame: at the VS of each fl=0 field).
+    //
+    // The input side is updated first, and the output side picks from the
+    // new input buffer, so a frame that completes on the same clock as a
+    // scaler VBL is the one the scaler takes and the two never share a
+    // buffer.  The scaler runs at about twice the woven frame rate, so with
+    // three buffers it moves only to a frame completed since its last move
+    // (fresh); otherwise it would step back to the frame before.
     //------------------------------------------------------------------
+    // the buffer that is neither a nor b (never a)
     function [1:0] buf_next;
         input [1:0] a, b;
         begin
-            buf_next = 1;
-            if ((a==0 && b==1) || (a==1 && b==0)) buf_next = 2;
-            if ((a==1 && b==2) || (a==2 && b==1)) buf_next = 0;
+            if (a != 2'd0 && b != 2'd0)      buf_next = 2'd0;
+            else if (a != 2'd1 && b != 2'd1) buf_next = 2'd1;
+            else                             buf_next = 2'd2;
         end
     endfunction
 
-    reg [1:0] i_fb = 2'd0, o_fb = 2'd0;
+    reg [1:0] i_fb = 2'd0, o_fb = 2'd1;
+    reg       fresh = 1'b0;             // a completed frame the scaler has not taken
     always @(posedge clk) begin
-        reg old_vbl, old_vs2;
+        reg       old_vbl, old_vs2;
+        reg [1:0] i_n;
+        reg       f_n;
         old_vbl <= FB_VBL;
         old_vs2 <= vs;
-        if (FB_LL) begin
-            if (~old_vbl & FB_VBL) o_fb <= {1'b0, ~i_fb[0]};
-            if (~old_vs2 & vs & ~fl) i_fb <= {1'b0, ~i_fb[0]};
-        end else begin
-            if (~old_vbl & FB_VBL) o_fb <= buf_next(o_fb, i_fb);
-            if (~old_vs2 & vs & ~fl) i_fb <= buf_next(i_fb, o_fb);
+        i_n = i_fb;
+        f_n = fresh;
+        if (~old_vs2 & vs & ~fl) begin
+            i_n = FB_LL ? {1'b0, ~i_fb[0]} : buf_next(i_fb, o_fb);
+            f_n = 1'b1;
         end
+        if (~old_vbl & FB_VBL) begin
+            if (FB_LL)    o_fb <= {1'b0, ~i_n[0]};
+            else if (f_n) o_fb <= buf_next(o_fb, i_n);
+            f_n = 1'b0;
+        end
+        i_fb  <= i_n;
+        fresh <= f_n;
     end
 
     assign FB_BASE = {MEM_BASE, o_fb, 23'd0};

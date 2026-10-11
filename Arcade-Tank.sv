@@ -523,9 +523,9 @@ module emu
     ///////////////////////   INTERLACE   ////////////////////////////
     //
     // Tank's raster is interlaced: 521 half-lines a field (260.5 lines,
-    // 60.80 Hz), so alternate fields start half a line apart.  video_sync
-    // aligns VSync and DE to whole lines, as the scaler expects, and marks
-    // the field with VGA_F1.
+    // 60.80 Hz), so alternate fields start half a line apart.  VSync keeps
+    // the board's half-line timing (a CRT interlaces), DE spans whole lines
+    // (the scaler counts them), and VGA_F1 marks the field.
     assign VGA_F1 = crt_on ? crt_fl : vid_fl;   // CRT Adjust: follows V-Shift
 
     ///////////////////////   STATUS LED   ///////////////////////////

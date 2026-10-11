@@ -71,6 +71,8 @@
 //      FRAME length in lines (521 for Tank: two fields of 260.5 lines), so a
 //      negative shift (delay of VTOTAL - |N| lines) lands on a field of the
 //      same parity.
+//    - V-Shift samples VSync at mid-line too, so the half-line VSync edge
+//      of Tank's second field is kept (see there).
 //    - hoff_s sign fix (negative H-Position in CONTENTSHIFT; see there).
 //    - DE/RGB blanked while the output HSync is high (content pushed past
 //      the line end no longer leaks a pixel past the HSync rise).
@@ -377,20 +379,45 @@ module crt_adjust #(
     initial vsync_line_shreg = 0;
     always @(posedge clk) if (hs_rise_in)
         vsync_line_shreg <= {vsync_line_shreg[VTOTAL-2:0], vs_in};
+
+    // (Tank adaptation: VSync is also sampled half a line after the HSync
+    //  rise, through its own line delay, so an interlaced field whose VSync
+    //  edge falls mid-line keeps it there.  Sampling only at the HSync rise
+    //  moved that edge to the next line start, and a CRT then drew both
+    //  fields on the same scanlines.  A VSync that changes only at line
+    //  starts reads the same at both points and comes out as before.)
+    localparam [AW-1:0] HHALF = HTOTAL / 2;
+    wire hs_mid_in = pxl_cen && !hs_rise_in && (wrp == HHALF);
+    reg [VTOTAL-1:0] vsync_mid_shreg;
+    initial vsync_mid_shreg = 0;
+    always @(posedge clk) if (hs_mid_in)
+        vsync_mid_shreg <= {vsync_mid_shreg[VTOTAL-2:0], vs_in};
+
     reg vs_shifted;
     initial vs_shifted = 0;
-    always @(posedge clk) if (hs_rise_in)
-        vs_shifted <= (vshift_tap == 0) ? vs_in : vsync_line_shreg[vshift_tap - 1'd1];
+    always @(posedge clk)
+        if (hs_rise_in)
+            vs_shifted <= (vshift_tap == 0) ? vs_in : vsync_line_shreg[vshift_tap - 1'd1];
+        else if (hs_mid_in)
+            vs_shifted <= (vshift_tap == 0) ? vs_in : vsync_mid_shreg[vshift_tap - 1'd1];
 
-    // Field flag through the same line delay as VSync (Tank adaptation).
+    // Field flag through the same two line delays as VSync, so it changes
+    // with the VSync edge it belongs to (Tank adaptation).
     reg [VTOTAL-1:0] fl_line_shreg;
     initial fl_line_shreg = 0;
     always @(posedge clk) if (hs_rise_in)
         fl_line_shreg <= {fl_line_shreg[VTOTAL-2:0], fl_in};
+    reg [VTOTAL-1:0] fl_mid_shreg;
+    initial fl_mid_shreg = 0;
+    always @(posedge clk) if (hs_mid_in)
+        fl_mid_shreg <= {fl_mid_shreg[VTOTAL-2:0], fl_in};
     reg fl_shifted;
     initial fl_shifted = 0;
-    always @(posedge clk) if (hs_rise_in)
-        fl_shifted <= (vshift_tap == 0) ? fl_in : fl_line_shreg[vshift_tap - 1'd1];
+    always @(posedge clk)
+        if (hs_rise_in)
+            fl_shifted <= (vshift_tap == 0) ? fl_in : fl_line_shreg[vshift_tap - 1'd1];
+        else if (hs_mid_in)
+            fl_shifted <= (vshift_tap == 0) ? fl_in : fl_mid_shreg[vshift_tap - 1'd1];
 
     // HSync emitted by the module: shifted only in HPOS_SYNCSHIFT, else native.
     // (hsync_pix_shreg / hs_shifted are computed above, before the read side.)

@@ -30,7 +30,7 @@ module video_sync (
     input  wire       clk_pix,     // 14.318181 MHz pixel clock (no reset)
 
     output reg        hsync,       // horizontal sync (active high)
-    output reg        vsync = 1'b0, // vertical sync (active high, whole lines)
+    output reg        vsync = 1'b0, // vertical sync (active high, half-lines 0..7)
     output reg        hblank,      // horizontal blanking
     output reg        vblank = 1'b1, // vertical blanking (whole lines)
     output reg        de,          // data enable
@@ -87,13 +87,17 @@ module video_sync (
     // Registered on clk_pix; HSYNC / HBLANK / DE use the next hcount so they
     // line up with the registered hcount.
     //
-    // The vertical outputs are latched once per line, at the line start:
-    // the MiSTer scaler expects whole-line VSYNC / VBLANK / DE with the field
-    // given by VGA_F1, and does the half-line weave itself.  VSYNC-to-VSYNC
-    // then alternates 260 / 261 lines, the usual interlace shape, and each
-    // field has 252 full DE lines.  Inside the core the raster stays the
-    // board's: in the lower field the content row still advances part-way
-    // along each line.  Half-lines 0..7 (vertical retrace) carry no DE.
+    // VSYNC follows the half-line counter, as on the board: it rises at
+    // hcount 0 in field 0 and at hcount 452 in field 1, so a CRT draws the
+    // two fields half a line apart.  The fields differ (in field 1 the
+    // content row advances part-way along each line), so a VSYNC on the
+    // line start would stack them on the same scanlines and the right part
+    // of the picture would flicker a row up and down.
+    //
+    // VBLANK and DE are latched once per line, at the line start: the MiSTer
+    // scaler counts whole DE lines from the VSYNC rise, takes the field from
+    // VGA_F1 and does the half-line weave itself.  Each field has 252 full
+    // DE lines.  Half-lines 0..7 (vertical retrace) carry no DE.
     //=========================================================================
     wire [9:0] hcount_n = (hcount == 10'd903) ? 10'd0 : hcount + 10'd1;
     wire [9:0] vh_n     = !tick ? hw_vcnt
@@ -104,11 +108,11 @@ module video_sync (
     always @(posedge clk_pix) begin
         hblank <= (hcount_n < 10'd128);
         hsync  <= (hcount_n >= 10'd32) && (hcount_n < 10'd64);   // COMP_SYNC H part
+        vsync  <= (vh_n < 10'd8);
 
-        // vertical signaling: latched at the line boundary from the value
+        // vertical blanking: latched at the line boundary from the value
         // the half-line counter holds as the new line begins
         if (hcount == 10'd903) begin
-            vsync  <= (vh_n < 10'd8);
             vblank <= (vh_n >= 10'd512) || (vh_n < 10'd8);
             row_ok <= (vh_n >= 10'd8) && (vh_n < 10'd512);
         end

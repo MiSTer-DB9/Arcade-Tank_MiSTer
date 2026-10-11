@@ -99,8 +99,9 @@ by the PLL. The parts below follow the schematics:
   interlaced picture at 60.80 fields a second, alternate fields starting
   half a line apart. The board's V counter steps at the middle of each
   line, so in one of the two fields the picture moves down a row part-way
-  along every line; the core keeps that. Sync goes out aligned to whole
-  lines with the field flag, as MiSTer's scaler expects.
+  along every line; the core keeps that. VSync keeps the board's half-line
+  timing, so a CRT interlaces the fields as the original monitor did; DE
+  spans whole lines and the field flag marks the field for MiSTer's scaler.
 - **Video levels.** Four TTL outputs summed in a resistor network give five
   grey levels: a grey background; black for the black tank, its shells and
   the mines; white for the walls, the digits and the white tank and its
@@ -151,13 +152,13 @@ repository.
 | Motion | The "slipping counter" compared with a gate-level model of it: idle lock with no drift, all 32 headings |
 | Analogue timings and levels | Measured in `nltool` on the corrected netlist with MAME's device models; datasheet timing for the DM9602 |
 | Whole game | Coin, start, play and game over through the full core |
-| Framebuffer (cocktail, Flip) | Every framebuffer byte checked for all three rotations while the DDR port stalls; the full core through the framebuffer on both mazes: each frame is the rotated weave of both fields, and a still picture stays identical frame to frame |
-| CRT Adjust | Every DE line, sync edge and field flag checked against the native raster for each control |
+| Framebuffer (cocktail, Flip) | Every framebuffer byte checked for all three rotations while the DDR port stalls; the full core through the framebuffer on both mazes: each frame is the rotated weave of both fields, and a still picture stays identical frame to frame; at every scaler VBL the newest completed frame is shown, never one being written or an older one |
+| CRT Adjust | Every DE line, sync edge and field flag checked against the native raster for each control, the half-line VSync included |
 | Release | This repository, compiled on its own: byte-identical to the released bitstream |
 
-Shipped build (Cyclone V 5CSEBA6U23I7): 9,912 ALMs (24 %), 79 RAM blocks
+Shipped build (Cyclone V 5CSEBA6U23I7): 10,230 ALMs (24 %), 79 RAM blocks
 (14 %), 54 DSP blocks (48 %). Timing closes on every corner: worst setup
-slack +0.212 ns, worst hold +0.201 ns.
+slack +0.263 ns, worst hold +0.199 ns.
 
 ---
 
