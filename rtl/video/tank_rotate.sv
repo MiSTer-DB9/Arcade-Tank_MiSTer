@@ -1,6 +1,6 @@
 //============================================================================
-//  tank_rotate - HDMI framebuffer for the cocktail rotation (90 degrees)
-//                and the OSD Flip (180 degrees): 8 bpp, 8 pixels per write
+//  tank_rotate - HDMI framebuffer: woven fields, upright (0 degrees), cocktail
+//                (90 degrees) or OSD Flip (180 degrees); 8 bpp, 8 pixels per write
 //
 //  Used instead of the framework's screen_rotate, which writes one pixel
 //  per clock to scattered DDR3 addresses and ignores DDRAM_BUSY: at Tank's
@@ -12,12 +12,15 @@
 //  WEAVE.  Tank is interlaced, and its two fields are not the same picture:
 //  in the field drawn half a line lower (fl = 1) the content row advances
 //  part-way along each line.  Rotating each field into the same rows would
-//  move part of the picture by a row every other field.  So, as the scaler
-//  does for the unrotated picture, the two fields are woven into one frame
-//  of 2H rows: line y of field fl is source row s = 2y + fl.  A frame is an
-//  fl = 0 field followed by an fl = 1 field, written into one buffer.
+//  move part of the picture by a row every other field.  So the two fields
+//  are woven into one frame of 2H rows: line y of field fl is source row
+//  s = 2y + fl.  A frame is an fl = 0 field followed by an fl = 1 field,
+//  written into one buffer.  The upright picture is woven here too: the
+//  scaler weaves only when its output has at least 2H lines and below that
+//  shows the fields one at a time, which makes the same part jump.
 //
 //  Mapping of a woven pixel (x, s), W x 2H (774 x 504 for Tank):
+//    0   : col = x,      row = s
 //    CW  : col = 2H-1-s, row = x       (source top-left -> output top-right)
 //    CCW : col = s,      row = W-1-x   (source top-left -> output bottom-left)
 //    180 : col = W-1-x,  row = 2H-1-s  (source top-left -> output bottom-right)
@@ -27,8 +30,9 @@
 //  alternate bytes (byte enables 0x55 / 0xAA; the other field fills the
 //  rest).  About 21 % write duty, through a one-line FIFO (rotate_ddr_fifo)
 //  that honours DDRAM_BUSY.
-//  180: a word is 8 consecutive pixels of one line, reversed, so an 8-pixel
-//  shift register replaces the line buffer: one word per 8 pixels (~11 %).
+//  0 / 180: a word is 8 consecutive pixels of one line (reversed for 180),
+//  so an 8-pixel shift register replaces the line buffer: one word per 8
+//  pixels (~11 %).
 //  Triple-buffered against the scaler's FB_VBL, as screen_rotate is.  The
 //  analog output is not affected.
 //============================================================================
@@ -46,7 +50,7 @@ module tank_rotate #(
     input  wire        fl,          // field flag: 1 = the field drawn half a
                                     // line lower (sampled at the VS rise)
 
-    input  wire  [1:0] mode,        // 0 = off, 1 = CW, 2 = CCW, 3 = 180
+    input  wire  [1:0] mode,        // 0 = upright, 1 = CW, 2 = CCW, 3 = 180
     output wire        video_rotated,
 
     output wire        FB_EN,
@@ -74,7 +78,6 @@ module tank_rotate #(
 );
 
     wire rot_on = (mode == 2'd1) || (mode == 2'd2);   // 90: W/H swap
-    wire fb_on  = (mode != 2'd0);                      // any framebuffer mode
     assign video_rotated = rot_on;
 
     //------------------------------------------------------------------
@@ -98,6 +101,7 @@ module tank_rotate #(
     reg [11:0] hsz = 12'd774;       // per-frame W
     reg [11:0] vsz = 12'd252;       // per-frame H (DE lines per field)
     reg        ccw = 1'b0;          // per-frame direction
+    reg        rm  = 1'b1;          // per-frame row-major mode (0 or 180)
     reg        flp = 1'b0;          // per-frame 180-degree mode
     reg        ofs = 1'b0;          // this field's fl = woven row parity
     reg  [2:0] fb_en = 3'b000;
@@ -117,11 +121,12 @@ module tank_rotate #(
             if (~old_vs & vs) begin
                 y     <= 12'd0;
                 ofs   <= fl;
-                fb_en <= {fb_en[1:0], fb_on};
+                fb_en <= {fb_en[1:0], 1'b1};
                 if (!fl) begin
                     vsz <= y;
                     hsz <= hsz_m;
                     ccw <= (mode == 2'd2);
+                    rm  <= !rot_on;
                     flp <= (mode == 2'd3);
                 end
             end
@@ -129,17 +134,17 @@ module tank_rotate #(
     end
 
     // Stride: output width rounded up to 16 bytes (as screen_rotate), in
-    // 64-bit words.  Output width = 2H (90) or W (180).
+    // 64-bit words.  Output width = 2H (90) or W (0, 180).
     wire [11:0] vsz2     = {vsz[10:0], 1'b0};       // woven frame height 2H
-    wire [11:0] fbw      = flp ? hsz : vsz2;
+    wire [11:0] fbw      = rm ? hsz : vsz2;
     wire [8:0]  stride_w = {fbw[11:4] + (|fbw[3:0]), 1'b0};
     reg  [19:0] rowmax = 20'd0;     // word offset of the last output row
-    always @(posedge clk) rowmax <= ((flp ? vsz2 : hsz) - 1'd1) * stride_w;
+    always @(posedge clk) rowmax <= ((rm ? vsz2 : hsz) - 1'd1) * stride_w;
 
     assign FB_EN     = fb_en[2];
     assign FB_FORMAT = 5'b00011;    // 8 bpp, palette
     assign FB_WIDTH  = fbw;
-    assign FB_HEIGHT = flp ? vsz2 : hsz;
+    assign FB_HEIGHT = rm ? vsz2 : hsz;
     assign FB_STRIDE = {stride_w, 3'b000};
 
     //------------------------------------------------------------------
@@ -203,20 +208,27 @@ module tank_rotate #(
     wire [19:0] addr0  = ccw ? (rowmax + grp) : {10'd0, grp};  // word offset at x = 0
     wire  [7:0] be90   = (ccw ? ofs : c[0]) ? 8'hAA : 8'h55;   // this field's bytes
 
-    // 180: output row 2H-1-s (frow = its word offset: set before the
-    // field's first line, then stepped two rows per line), output column
-    // W-1-x; a word is flushed when that column is 8-aligned, i.e. it holds
-    // columns cf..cf+7 = source pixels x..x-7.  The first word of a line
-    // also carries up to 7 columns past W-1 (stride padding).
+    // 0 / 180: output row s / 2H-1-s (frow = its word offset: set before
+    // the field's first line, then stepped two rows per line).
+    // 180: output column W-1-x; a word is flushed when that column is
+    // 8-aligned, i.e. it holds columns cf..cf+7 = source pixels x..x-7.  The
+    // first word of a line also carries up to 7 columns past W-1 (stride
+    // padding).
+    // 0: output column x; a word is flushed at x = 8n+7 or at the line's
+    // last pixel, and holds columns x-xl..x (xl = x mod 8), byte k = pixel
+    // x-xl+k; bytes past xl are stride padding.
     reg  [19:0] frow   = 20'd0;
     always @(posedge clk)
         if (ce) begin
-            if (old_de & ~de)           frow <= frow - {stride_w, 1'b0};
-            else if (y == 12'd0 && !de) frow <= rowmax - (ofs ? stride_w : 9'd0);
+            if (old_de & ~de)           frow <= flp ? frow - {stride_w, 1'b0}
+                                                    : frow + {stride_w, 1'b0};
+            else if (y == 12'd0 && !de) frow <= flp ? rowmax - (ofs ? stride_w : 9'd0)
+                                                    : (ofs ? stride_w : 9'd0);
         end
     wire [11:0] cf     = hsz - 1'd1 - x;
-    wire        fflush = (cf[2:0] == 3'd0);
-    wire [19:0] faddr  = frow + cf[11:3];
+    wire        fflush = flp ? (cf[2:0] == 3'd0)
+                             : ((x[2:0] == 3'd7) || (x == hsz - 1'd1));
+    wire [19:0] faddr  = frow + (flp ? cf[11:3] : x[11:3]);
     reg  [55:0] fsr    = 56'd0;     // the previous 7 pixels of this line
     always @(posedge clk) if (ce && de) fsr <= {fsr[47:0], pix};
 
@@ -249,7 +261,9 @@ module tank_rotate #(
     reg   [7:0] s1_pix;
     reg   [2:0] s1_slot;
     reg         s1_ccw;
+    reg         s1_rm;
     reg         s1_flp;
+    reg   [2:0] s1_xl;
     reg   [7:0] s1_be;
     reg  [63:0] s1_fword;
 
@@ -257,14 +271,16 @@ module tank_rotate #(
         s1_valid <= 1'b0;
         if (ce && de) begin
             waddr_next <= ccw ? (waddr - stride_w) : (waddr + stride_w);
-            s1_valid   <= (flp ? fflush : flush) & fb_en[0];
-            s1_addr    <= flp ? faddr : waddr;
+            s1_valid   <= (rm ? fflush : flush) & fb_en[0];
+            s1_addr    <= rm ? faddr : waddr;
             s1_fb      <= i_fb;
             s1_pix     <= pix;
             s1_slot    <= y[2:0];
             s1_ccw     <= ccw;
+            s1_rm      <= rm;
             s1_flp     <= flp;
-            s1_be      <= flp ? 8'hFF : be90;
+            s1_xl      <= x[2:0];
+            s1_be      <= rm ? 8'hFF : be90;
             s1_fword   <= {fsr, pix};   // byte k = source pixel x-k
         end
     end
@@ -273,14 +289,18 @@ module tank_rotate #(
     // bytes are enabled (s1_be), and those hold its lines k/2 apart:
     //   CW : field line y - k/2      -> slot (y - k/2) mod 8  (k/2 = 0 is live)
     //   CCW: field line 4g + k/2     -> slot {y[2], k/2}      (k/2 = y[1:0] live)
-    wire [63:0] rword;
-    wire [63:0] word = s1_flp ? s1_fword : rword;
+    // 0: byte k = s1_fword byte xl-k (source pixel x-xl+k).
+    wire [63:0] rword, uword;
+    wire [63:0] word = s1_rm ? (s1_flp ? s1_fword : uword) : rword;
     genvar b;
     generate
         for (b = 0; b < 8; b = b + 1) begin : g_asm
             wire [1:0] bh = b >> 1;
             wire [2:0] sl = s1_ccw ? {s1_slot[2], bh} : (s1_slot - {1'b0, bh});
+            localparam [2:0] B3 = b;
+            wire [2:0] ub = s1_xl - B3;
             assign rword[b*8 +: 8] = (sl == s1_slot) ? s1_pix : lb_q[sl];
+            assign uword[b*8 +: 8] = s1_fword[ub*8 +: 8];
         end
     endgenerate
 

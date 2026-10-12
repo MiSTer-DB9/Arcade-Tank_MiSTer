@@ -467,11 +467,13 @@ module emu
     //
     // tank_rotate writes the raster into a DDR3 framebuffer (8 bpp gray)
     // that the scaler shows on HDMI; the analog output is never rotated.
-    // The two interlaced fields are woven into one 774 x 504 frame first,
-    // as the scaler does for the unrotated picture, then turned 90 degrees
-    // (504 x 774, cocktail) or 180 degrees (OSD Flip on an upright).  The
-    // framework's screen_rotate is not used: its one write per pixel loses
-    // pixels whenever the DDR3 port stalls.
+    // The two interlaced fields are woven into one 774 x 504 frame, which is
+    // shown as it is (upright) or turned 90 degrees (504 x 774, cocktail) or
+    // 180 degrees (OSD Flip on an upright).  The upright picture goes through
+    // the framebuffer too: the scaler's own weave needs at least 504 output
+    // lines and below that shows the fields one at a time.  The framework's
+    // screen_rotate is not used: its one write per pixel loses pixels
+    // whenever the DDR3 port stalls.
 `ifdef MISTER_FB
     assign FB_FORCE_BLANK = 1'b0;
 

@@ -82,9 +82,10 @@ The two tanks have their own speakers on the cabinet: the core plays the
 black tank on the left channel and the white tank on the right.
 
 Orientation, Scale and the cocktail rotation act on the HDMI picture only;
-the analog output always carries the board's own raster. For Flip and the
-cocktail rotation the two interlaced fields are woven into one 774 x 504
-frame before it is turned, as the scaler does for the unturned picture.
+the analog output always carries the board's own raster. On HDMI the two
+interlaced fields are woven into one 774 x 504 frame in the core's own
+framebuffer, then shown as it is or turned, so the picture is steady at any
+output resolution (the scaler's own weave needs at least 504 output lines).
 CRT Adjust is for the analog output; it also reaches HDMI, where its V-Shift
 makes the picture wrap.
 
@@ -152,13 +153,13 @@ repository.
 | Motion | The "slipping counter" compared with a gate-level model of it: idle lock with no drift, all 32 headings |
 | Analogue timings and levels | Measured in `nltool` on the corrected netlist with MAME's device models; datasheet timing for the DM9602 |
 | Whole game | Coin, start, play and game over through the full core |
-| Framebuffer (cocktail, Flip) | Every framebuffer byte checked for all three rotations while the DDR port stalls; the full core through the framebuffer on both mazes: each frame is the rotated weave of both fields, and a still picture stays identical frame to frame; at every scaler VBL the newest completed frame is shown, never one being written or an older one |
+| HDMI framebuffer | Every framebuffer byte checked for upright and all three rotations while the DDR port stalls; the full core through the framebuffer on both mazes: each frame is the rotated weave of both fields, and a still picture stays identical frame to frame; at every scaler VBL the newest completed frame is shown, never one being written or an older one |
 | CRT Adjust | Every DE line, sync edge and field flag checked against the native raster for each control, the half-line VSync included |
 | Release | This repository, compiled on its own: byte-identical to the released bitstream |
 
-Shipped build (Cyclone V 5CSEBA6U23I7): 10,230 ALMs (24 %), 79 RAM blocks
+Shipped build (Cyclone V 5CSEBA6U23I7): 10,320 ALMs (25 %), 79 RAM blocks
 (14 %), 54 DSP blocks (48 %). Timing closes on every corner: worst setup
-slack +0.263 ns, worst hold +0.199 ns.
+slack +0.645 ns, worst hold +0.250 ns.
 
 ---
 
@@ -189,7 +190,7 @@ rtl/                      The game boards (tank_core.sv is their top)
                           and scoring, the 9316 counter
   video/                  Sync, maze and score digits, mines, tanks, shells and
                           explosions; MiSTer output: CRT Adjust, the HDMI
-                          framebuffer for the cocktail rotation and Flip
+                          framebuffer (weave, cocktail rotation, Flip)
   sound/                  Engine, shot and explosion circuits
   mem/                    The 2 KB ROM, loaded from the MRA
   pll.v, pll.qip          PLL
